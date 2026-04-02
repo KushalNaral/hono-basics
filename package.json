@@ -2,14 +2,20 @@
   "name": "hono-basics",
   "scripts": {
     "dev": "bun run --hot src/index.ts",
-    "dev:docker": "docker compose up --build -d",
+    "dev:docker": "docker compose --profile dev up --build -d",
+    "prod:docker": "docker compose --profile prod up --build -d",
     "build": "bun build src/index.ts --outdir dist",
     "test": "bun test",
     "lint": "biome check .",
-    "lint:fix": "biome check --fix .",
+    "lint:fix": "biome check --write --unsafe .",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
-    "check": "bun run typecheck && bun run lint"
+    "check": "bun run typecheck && bun run lint",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun run src/db/migrate.ts",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:check": "bun run src/scripts/db-check.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
