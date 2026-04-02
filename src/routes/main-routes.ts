@@ -1,75 +1,81 @@
-import { createRoute, z } from "@hono/zod-openapi";
+import { describeRoute, resolver } from "hono-openapi";
+import { z } from "zod";
 import { app } from "../app";
 import { requireAuth } from "../lib/auth";
-import { ErrorSchema } from "../lib/auth/schemas";
-
-// --- Route Definitions ---
-
-export const rootRoute = createRoute({
-  method: "get",
-  path: "/",
-  summary: "Welcome endpoint",
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: z.object({ message: z.string() }),
-        },
-      },
-      description: "Welcome message",
-    },
-  },
-});
-
-export const meRoute = createRoute({
-  method: "get",
-  path: "/me",
-  summary: "Get current session profile",
-  description: "Retrieve user and session details for the authenticated user.",
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: z.object({
-            user: z.record(z.unknown()),
-            session: z.record(z.unknown()),
-          }),
-        },
-      },
-      description: "User and session information",
-    },
-    401: {
-      content: { "application/json": { schema: ErrorSchema } },
-      description: "Unauthorized",
-    },
-  },
-  security: [{ cookieAuth: [] }],
-});
+import { AuthResponseSchema, ErrorSchema } from "../lib/auth/schemas";
 
 /**
  * Registers main routes for the application.
  * This includes basic profile and status checks.
  */
 export function registerMainRoutes() {
-  app.use("/me", requireAuth);
-
-  app.openapi(rootRoute, (c) => {
-    const user = c.get("user");
-    if (user) {
-      return c.json({ message: `Hello ${user.name}!` }, 200);
-    }
-    return c.json({ message: "Hello! Please sign in." }, 200);
-  });
-
-  app.openapi(meRoute, (c) => {
-    const user = c.get("user");
-    const session = c.get("session");
-    return c.json(
-      {
-        user: user as Record<string, unknown>,
-        session: session as Record<string, unknown>,
+  // 1. Welcome endpoint
+  app.get(
+    "/",
+    describeRoute({
+      summary: "Welcome endpoint",
+      description:
+        "A basic welcome endpoint that returns a personalized message if the user is authenticated, or a generic message otherwise.",
+      responses: {
+        200: {
+          description: "Welcome message successfully retrieved",
+          content: {
+            "application/json": {
+              schema: resolver(
+                z.object({ message: z.string().openapi({ example: "Hello John Doe!" }) }),
+              ),
+            },
+          },
+        },
       },
-      200,
-    );
-  });
+    }),
+    async (c) => {
+      const user = c.get("user");
+      if (user) {
+        return c.json({ message: `Hello ${user.name}!` }, 200);
+      }
+      return c.json({ message: "Hello! Please sign in." }, 200);
+    },
+  );
+
+  // 2. Get current session profile
+  app.get(
+    "/me",
+    describeRoute({
+      summary: "Get current session profile",
+      description:
+        "Retrieve user and session details for the currently authenticated user. This serves as a quick profile check.",
+      responses: {
+        200: {
+          description: "User and session information successfully retrieved",
+          content: {
+            "application/json": {
+              schema: resolver(AuthResponseSchema),
+            },
+          },
+        },
+        401: {
+          description: "Unauthorized - No active session",
+          content: {
+            "application/json": {
+              schema: resolver(ErrorSchema),
+            },
+          },
+        },
+      },
+      security: [{ cookieAuth: [] }],
+    }),
+    requireAuth,
+    async (c) => {
+      const user = c.get("user");
+      const session = c.get("session");
+      return c.json(
+        {
+          user: user as Record<string, unknown>,
+          session: session as Record<string, unknown>,
+        },
+        200,
+      );
+    },
+  );
 }

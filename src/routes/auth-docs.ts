@@ -1,4 +1,4 @@
-import { createRoute, z } from "@hono/zod-openapi";
+import { describeRoute, resolver, validator as zValidator } from "hono-openapi";
 import { app } from "../app";
 import {
   AdminListUsersResponseSchema,
@@ -9,140 +9,150 @@ import {
   SignUpInputSchema,
 } from "../lib/auth/schemas";
 
-// --- Route Definitions ---
-
-export const signUpRoute = createRoute({
-  method: "post",
-  path: "/api/auth/sign-up/email",
-  summary: "Sign Up with Email",
-  tags: ["Authentication"],
-  request: {
-    body: {
-      content: { "application/json": { schema: SignUpInputSchema } },
-    },
-  },
-  responses: {
-    200: {
-      content: { "application/json": { schema: AuthResponseSchema } },
-      description: "Successful registration",
-    },
-    400: {
-      content: { "application/json": { schema: ErrorSchema } },
-      description: "Invalid input",
-    },
-  },
-});
-
-export const signInRoute = createRoute({
-  method: "post",
-  path: "/api/auth/sign-in/email",
-  summary: "Sign In with Email",
-  tags: ["Authentication"],
-  request: {
-    body: {
-      content: { "application/json": { schema: SignInInputSchema } },
-    },
-  },
-  responses: {
-    200: {
-      content: { "application/json": { schema: AuthResponseSchema } },
-      description: "Successful login",
-    },
-    401: {
-      content: { "application/json": { schema: ErrorSchema } },
-      description: "Invalid credentials",
-    },
-  },
-});
-
-export const signOutRoute = createRoute({
-  method: "post",
-  path: "/api/auth/sign-out",
-  summary: "Sign Out",
-  tags: ["Authentication"],
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: z.object({ message: z.string() }),
-        },
-      },
-      description: "Successful sign out",
-    },
-  },
-});
-
-export const sessionRoute = createRoute({
-  method: "get",
-  path: "/api/auth/session",
-  summary: "Get Current Session",
-  tags: ["Authentication"],
-  responses: {
-    200: {
-      content: { "application/json": { schema: AuthResponseSchema } },
-      description: "Active session info",
-    },
-    401: {
-      content: { "application/json": { schema: ErrorSchema } },
-      description: "No active session",
-    },
-  },
-});
-
-export const adminListUsersRoute = createRoute({
-  method: "get",
-  path: "/api/auth/admin/list-users",
-  summary: "List All Users (Admin)",
-  tags: ["Admin"],
-  responses: {
-    200: {
-      content: { "application/json": { schema: AdminListUsersResponseSchema } },
-      description: "List of users",
-    },
-    403: {
-      content: { "application/json": { schema: ErrorSchema } },
-      description: "Forbidden",
-    },
-  },
-  security: [{ cookieAuth: [] }],
-});
-
-export const adminSetRoleRoute = createRoute({
-  method: "post",
-  path: "/api/auth/admin/set-role",
-  summary: "Set User Role (Admin)",
-  tags: ["Admin"],
-  request: {
-    body: {
-      content: { "application/json": { schema: AdminSetRoleInputSchema } },
-    },
-  },
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: z.object({ message: z.string() }),
-        },
-      },
-      description: "Role updated successfully",
-    },
-    403: {
-      content: { "application/json": { schema: ErrorSchema } },
-      description: "Forbidden",
-    },
-  },
-  security: [{ cookieAuth: [] }],
-});
-
 /**
  * Registers documentation for Better Auth routes.
- * These are "docs only" to avoid body consumption conflicts in Hono.
+ * These are "shadow routes" that only exist to provide OpenAPI metadata.
+ * They are registered on the main app but will not be reached because
+ * the Better Auth handler is registered earlier in index.ts.
  */
 export function registerAuthDocs() {
-  app.openAPIRegistry.registerPath(signUpRoute);
-  app.openAPIRegistry.registerPath(signInRoute);
-  app.openAPIRegistry.registerPath(signOutRoute);
-  app.openAPIRegistry.registerPath(sessionRoute);
-  app.openAPIRegistry.registerPath(adminListUsersRoute);
-  app.openAPIRegistry.registerPath(adminSetRoleRoute);
+  // 1. Sign Up
+  app.post(
+    "/api/auth/sign-up/email",
+    describeRoute({
+      summary: "Sign Up with Email",
+      description:
+        "Create a new user account using an email address and password. This endpoint sets a session cookie upon successful registration.",
+      tags: ["Authentication"],
+      responses: {
+        200: {
+          description: "Successful registration",
+          content: {
+            "application/json": { schema: resolver(AuthResponseSchema) },
+          },
+        },
+        400: {
+          description: "Invalid input or email already exists",
+          content: { "application/json": { schema: resolver(ErrorSchema) } },
+        },
+      },
+    }),
+    zValidator("json", SignUpInputSchema),
+    async (c) => c.json({}, 200),
+  );
+
+  // 2. Sign In
+  app.post(
+    "/api/auth/sign-in/email",
+    describeRoute({
+      summary: "Sign In with Email",
+      description:
+        "Log in to an existing account using an email address and password. Sets a session cookie upon successful authentication.",
+      tags: ["Authentication"],
+      responses: {
+        200: {
+          description: "Successful login",
+          content: {
+            "application/json": { schema: resolver(AuthResponseSchema) },
+          },
+        },
+        401: {
+          description: "Invalid email or password",
+          content: { "application/json": { schema: resolver(ErrorSchema) } },
+        },
+      },
+    }),
+    zValidator("json", SignInInputSchema),
+    async (c) => c.json({}, 200),
+  );
+
+  // 3. Sign Out
+  app.post(
+    "/api/auth/sign-out",
+    describeRoute({
+      summary: "Sign Out",
+      description: "Invalidate the current session and clear the session cookie.",
+      tags: ["Authentication"],
+      responses: {
+        200: {
+          description: "Successful sign out",
+        },
+      },
+    }),
+    async (c) => c.json({}, 200),
+  );
+
+  // 4. Session
+  app.get(
+    "/api/auth/session",
+    describeRoute({
+      summary: "Get Current Session",
+      description:
+        "Retrieve information about the currently authenticated user and their active session. Requires a valid session cookie.",
+      tags: ["Authentication"],
+      responses: {
+        200: {
+          description: "Active session and user info",
+          content: {
+            "application/json": { schema: resolver(AuthResponseSchema) },
+          },
+        },
+        401: {
+          description: "No active session found",
+          content: { "application/json": { schema: resolver(ErrorSchema) } },
+        },
+      },
+      security: [{ cookieAuth: [] }],
+    }),
+    async (c) => c.json({}, 200),
+  );
+
+  // 5. Admin List Users
+  app.get(
+    "/api/auth/admin/list-users",
+    describeRoute({
+      summary: "List All Users (Admin)",
+      description:
+        "Retrieve a paginated list of all registered users. Requires 'admin' role or appropriate permissions.",
+      tags: ["Admin"],
+      responses: {
+        200: {
+          description: "List of users successfully retrieved",
+          content: {
+            "application/json": {
+              schema: resolver(AdminListUsersResponseSchema),
+            },
+          },
+        },
+        403: {
+          description: "Forbidden - Requires admin privileges",
+          content: { "application/json": { schema: resolver(ErrorSchema) } },
+        },
+      },
+      security: [{ cookieAuth: [] }],
+    }),
+    async (c) => c.json({}, 200),
+  );
+
+  // 6. Admin Set Role
+  app.post(
+    "/api/auth/admin/set-role",
+    describeRoute({
+      summary: "Set User Role (Admin)",
+      description: "Update the role assigned to a specific user. Requires 'admin' role.",
+      tags: ["Admin"],
+      responses: {
+        200: {
+          description: "Role updated successfully",
+        },
+        403: {
+          description: "Forbidden - Requires admin privileges",
+          content: { "application/json": { schema: resolver(ErrorSchema) } },
+        },
+      },
+      security: [{ cookieAuth: [] }],
+    }),
+    zValidator("json", AdminSetRoleInputSchema),
+    async (c) => c.json({}, 200),
+  );
 }
