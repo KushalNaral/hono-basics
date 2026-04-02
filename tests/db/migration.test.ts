@@ -1,36 +1,13 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { Pool } from "pg";
 import { testMigrationTable } from "@/db/schema";
+import { createEnv } from "@/lib/env";
 
-const TEST_DB_URL =
-  process.env.DB_URL ?? "postgresql://postgres:postgres123@localhost:5433/hono_db";
-
-let pool: Pool;
-let db: ReturnType<typeof drizzle>;
+const env = createEnv(process.env);
+const db = drizzle(env.DB_URL);
 
 describe("Database migrations", () => {
-  beforeAll(async () => {
-    pool = new Pool({ connectionString: TEST_DB_URL });
-    db = drizzle(pool);
-
-    // Clean slate: drop any leftover tables and drizzle tracking schema from previous runs
-    await db.execute(sql`DROP TABLE IF EXISTS "test-migration" CASCADE`);
-    await db.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`);
-  });
-
-  afterAll(async () => {
-    await db.execute(sql`DROP TABLE IF EXISTS "test-migration" CASCADE`);
-    await db.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`);
-    await pool.end();
-  });
-
-  it("should run migrations without error", async () => {
-    await expect(migrate(db, { migrationsFolder: "./drizzle" })).resolves.toBeUndefined();
-  });
-
   it("should have created the test-migration table", async () => {
     const result = await db.execute(sql`
       SELECT table_name
@@ -63,5 +40,20 @@ describe("Database migrations", () => {
     const rows = await db.select().from(testMigrationTable);
     expect(rows.length).toBeGreaterThanOrEqual(1);
     expect(rows[0]?.name).toBe("migration-test-row");
+  });
+
+  it("should have created all auth tables", async () => {
+    const result = await db.execute(sql`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+      ORDER BY table_name
+    `);
+    const tables = (result.rows as { table_name: string }[]).map((r) => r.table_name);
+    expect(tables).toContain("user");
+    expect(tables).toContain("session");
+    expect(tables).toContain("account");
+    expect(tables).toContain("verification");
+    expect(tables).toContain("two_factor");
   });
 });

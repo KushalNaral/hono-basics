@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createEnv } from "./env";
+import { createEnv } from "@/lib/env";
 
 describe("Env validation", () => {
   it("parses valid env", () => {
@@ -12,6 +12,10 @@ describe("Env validation", () => {
       APP_PORT: "3000",
       APP_KEY: "abc",
       NODE_ENV: "test",
+      BETTER_AUTH_SECRET: "test-secret-key",
+      BETTER_AUTH_URL: "http://localhost:3000",
+      LOG_LEVEL: "info",
+      CORS_ORIGIN: "http://localhost:3000",
     });
 
     expect(env.DB_URL).toBe("http://localhost:5432");
