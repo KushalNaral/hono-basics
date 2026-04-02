@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { createEnv } from "./env";
 
 describe("Env validation", () => {
@@ -28,7 +28,7 @@ describe("Env validation", () => {
     expect(() => {
       createEnv({
         DB_URL: "not-url-here-for-zod-safe-parse",
-      } as any);
+      });
     }).toThrow();
   });
 });
