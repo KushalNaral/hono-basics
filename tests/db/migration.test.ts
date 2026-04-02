@@ -55,5 +55,8 @@ describe("Database migrations", () => {
     expect(tables).toContain("account");
     expect(tables).toContain("verification");
     expect(tables).toContain("two_factor");
+    expect(tables).toContain("role");
+    expect(tables).toContain("permission");
+    expect(tables).toContain("role_permission");
   });
 });

@@ -22,6 +22,20 @@
       "when": 1775107746781,
       "tag": "0002_overconfident_aqueduct",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775109290172,
+      "tag": "0003_classy_grim_reaper",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775109771814,
+      "tag": "0004_faithful_rogue",
+      "breakpoints": true
     }
   ]
 }

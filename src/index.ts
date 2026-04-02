@@ -1,25 +1,44 @@
-import { Hono } from "hono";
-import type { AuthVariables } from "@/lib/auth";
-import { auth, requireAuth, sessionMiddleware } from "@/lib/auth";
+import { swaggerUI } from "@hono/swagger-ui";
+import { auth, sessionMiddleware } from "@/lib/auth";
+import { app } from "./app";
+import { registerAuthDocs } from "./routes/auth-docs";
+import { registerMainRoutes } from "./routes/main-routes";
+import { rbacRoutes } from "./routes/rbac-routes";
 
-const app = new Hono<{ Variables: AuthVariables }>();
+/**
+ * --- Application Entry Point ---
+ * Orchestrates middleware, routes, and documentation.
+ */
 
-// Auth handler — must be before session middleware to avoid circular calls
+// 1. Better Auth handler (Caught before session middleware)
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
-// Session middleware for all other routes
+// 2. Global Middlewares
 app.use("*", sessionMiddleware);
 
-app.get("/", (c) => {
-  const user = c.get("user");
-  if (user) {
-    return c.json({ message: `Hello ${user.name}!`, user });
-  }
-  return c.json({ message: "Hello! Please sign in." });
+// 3. Documentation Setup
+app.doc("/openapi.json", {
+  openapi: "3.0.0",
+  info: {
+    title: "Hono Basics API",
+    version: "1.0.0",
+    description: "A secure API built with Hono, Better Auth, and Drizzle ORM.",
+  },
+  servers: [{ url: "http://localhost:3000" }],
 });
 
-app.get("/me", requireAuth, (c) => {
-  return c.json({ user: c.get("user"), session: c.get("session") });
+app.openAPIRegistry.registerComponent("securitySchemes", "cookieAuth", {
+  type: "apiKey",
+  in: "cookie",
+  name: "better-auth.session_token",
+  description: "Session token stored in a cookie.",
 });
+
+app.get("/doc", swaggerUI({ url: "/openapi.json" }));
+
+// 4. Route Registration
+registerMainRoutes();
+registerAuthDocs();
+app.route("/api/rbac", rbacRoutes);
 
 export default app;
