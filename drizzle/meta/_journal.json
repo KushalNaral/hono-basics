@@ -36,6 +36,13 @@
       "when": 1775109771814,
       "tag": "0004_faithful_rogue",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775122644733,
+      "tag": "0005_role_id_migration",
+      "breakpoints": true
     }
   ]
 }

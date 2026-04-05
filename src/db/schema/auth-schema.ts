@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { role } from "./rbac-schema";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -19,6 +20,7 @@ export const user = pgTable("user", {
   banExpires: timestamp("ban_expires"),
   // Two-factor plugin field
   twoFactorEnabled: boolean("two_factor_enabled").default(false),
+  roleId: text("role_id").references(() => role.id),
 });
 
 export const session = pgTable(
@@ -93,9 +95,13 @@ export const twoFactor = pgTable("two_factor", {
 });
 
 // Relations
-export const userRelations = relations(user, ({ many }) => ({
+export const userRelations = relations(user, ({ many, one }) => ({
   sessions: many(session),
   accounts: many(account),
+  role: one(role, {
+    fields: [user.roleId],
+    references: [role.id],
+  }),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({

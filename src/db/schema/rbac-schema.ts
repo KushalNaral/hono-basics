@@ -2,7 +2,10 @@ import { relations } from "drizzle-orm";
 import { index, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 
 export const role = pgTable("role", {
-  name: text("name").primaryKey(),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull().unique(),
   description: text("description"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
@@ -14,7 +17,9 @@ export const role = pgTable("role", {
 export const permission = pgTable(
   "permission",
   {
-    id: text("id").primaryKey(),
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
     name: text("name").notNull().unique(),
     groupName: text("group_name").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -29,17 +34,17 @@ export const permission = pgTable(
 export const rolePermission = pgTable(
   "role_permission",
   {
-    role: text("role")
+    roleId: text("role_id")
       .notNull()
-      .references(() => role.name, { onDelete: "cascade" }),
+      .references(() => role.id, { onDelete: "cascade" }),
     permissionId: text("permission_id")
       .notNull()
       .references(() => permission.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.role, table.permissionId] }),
-    index("role_permission_role_idx").on(table.role),
+    primaryKey({ columns: [table.roleId, table.permissionId] }),
+    index("role_permission_role_idx").on(table.roleId),
   ],
 );
 
@@ -53,8 +58,8 @@ export const permissionRelations = relations(permission, ({ many }) => ({
 
 export const rolePermissionRelations = relations(rolePermission, ({ one }) => ({
   role: one(role, {
-    fields: [rolePermission.role],
-    references: [role.name],
+    fields: [rolePermission.roleId],
+    references: [role.id],
   }),
   permission: one(permission, {
     fields: [rolePermission.permissionId],

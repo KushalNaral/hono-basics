@@ -7,7 +7,19 @@ import { db } from "@/lib/db";
  */
 export const rbac = {
   /**
-   * Get all permissions assigned to a specific role.
+   * Get the role ID for a given role name.
+   */
+  async getRoleIdByName(roleName: string): Promise<string | null> {
+    const [result] = await db
+      .select({ id: role.id })
+      .from(role)
+      .where(eq(role.name, roleName))
+      .limit(1);
+    return result?.id ?? null;
+  },
+
+  /**
+   * Get all permissions assigned to a specific role (by name).
    */
   async getPermissionsByRole(roleName: string) {
     const result = await db
@@ -17,7 +29,8 @@ export const rbac = {
       })
       .from(rolePermission)
       .innerJoin(permission, eq(rolePermission.permissionId, permission.id))
-      .where(eq(rolePermission.role, roleName));
+      .innerJoin(role, eq(rolePermission.roleId, role.id))
+      .where(eq(role.name, roleName));
 
     return result;
   },
@@ -32,7 +45,8 @@ export const rbac = {
       .select({ name: permission.name })
       .from(rolePermission)
       .innerJoin(permission, eq(rolePermission.permissionId, permission.id))
-      .where(and(eq(rolePermission.role, roleName), inArray(permission.name, requiredPermissions)));
+      .innerJoin(role, eq(rolePermission.roleId, role.id))
+      .where(and(eq(role.name, roleName), inArray(permission.name, requiredPermissions)));
 
     return result.length === requiredPermissions.length;
   },
@@ -58,7 +72,7 @@ export const rbac = {
     const rolesList = await this.getAllRoles();
     const allMappings = await db
       .select({
-        role: rolePermission.role,
+        roleId: rolePermission.roleId,
         permissionName: permission.name,
       })
       .from(rolePermission)
@@ -66,7 +80,7 @@ export const rbac = {
 
     return rolesList.map((r) => ({
       ...r,
-      permissions: allMappings.filter((m) => m.role === r.name).map((m) => m.permissionName),
+      permissions: allMappings.filter((m) => m.roleId === r.id).map((m) => m.permissionName),
     }));
   },
 };

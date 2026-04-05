@@ -52,20 +52,30 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
-async function upsertRoles(db: NodePgDatabase): Promise<void> {
+async function upsertRoles(db: NodePgDatabase): Promise<Map<string, string>> {
   console.log("Seeding roles...");
+  const roleIdMap = new Map<string, string>();
+
   for (const r of roleDefinitions) {
     const existing = await db.select().from(role).where(eq(role.name, r.name));
     if (existing.length === 0) {
-      await db.insert(role).values(r);
+      const created = await db.insert(role).values(r).returning();
+      const createdRole = created[0];
+      if (!createdRole) throw new Error(`Failed to create role: ${r.name}`);
+      roleIdMap.set(r.name, createdRole.id);
       console.log(`  + Created role: ${r.name}`);
     } else {
       await db
         .update(role)
         .set({ description: r.description, updatedAt: new Date() })
         .where(eq(role.name, r.name));
+      const existingRole = existing[0];
+      if (!existingRole) throw new Error(`Role disappeared: ${r.name}`);
+      roleIdMap.set(r.name, existingRole.id);
     }
   }
+
+  return roleIdMap;
 }
 
 async function upsertPermissions(db: NodePgDatabase): Promise<string[]> {
@@ -97,14 +107,21 @@ async function upsertPermissions(db: NodePgDatabase): Promise<string[]> {
   return allPermNames;
 }
 
-async function syncRoleAssignments(db: NodePgDatabase, allPermNames: string[]): Promise<void> {
+async function syncRoleAssignments(
+  db: NodePgDatabase,
+  allPermNames: string[],
+  roleIdMap: Map<string, string>,
+): Promise<void> {
   console.log("Syncing role-permission assignments...");
 
   for (const [roleName, assignedPerms] of Object.entries(roleAssignments)) {
+    const roleId = roleIdMap.get(roleName);
+    if (!roleId) continue;
+
     const targetPermNames = assignedPerms === "all" ? allPermNames : assignedPerms;
 
     // Clear existing for this role
-    await db.delete(rolePermission).where(eq(rolePermission.role, roleName));
+    await db.delete(rolePermission).where(eq(rolePermission.roleId, roleId));
 
     // Fetch IDs for permissions
     if (targetPermNames.length > 0) {
@@ -116,7 +133,7 @@ async function syncRoleAssignments(db: NodePgDatabase, allPermNames: string[]): 
       if (permRecords.length > 0) {
         await db.insert(rolePermission).values(
           permRecords.map((p) => ({
-            role: roleName,
+            roleId,
             permissionId: p.id,
           })),
         );
@@ -127,8 +144,8 @@ async function syncRoleAssignments(db: NodePgDatabase, allPermNames: string[]): 
 }
 
 export async function seedRolePermissions(db: NodePgDatabase): Promise<void> {
-  await upsertRoles(db);
+  const roleIdMap = await upsertRoles(db);
   const allPermNames = await upsertPermissions(db);
-  await syncRoleAssignments(db, allPermNames);
+  await syncRoleAssignments(db, allPermNames, roleIdMap);
   console.log("RBAC seeding complete.");
 }

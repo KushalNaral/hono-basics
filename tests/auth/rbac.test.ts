@@ -22,9 +22,17 @@ async function authRequest(path: string, options: RequestInit = {}) {
   return app.fetch(req);
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: test helper for untyped JSON responses
-async function jsonBody(res: Response): Promise<any> {
-  return res.json();
+interface DataListResponse {
+  data: { name?: string; id?: string }[];
+}
+
+interface MePermissionsResponse {
+  role: string;
+  permissions: string[];
+}
+
+async function jsonBody<T = unknown>(res: Response): Promise<T> {
+  return res.json() as Promise<T>;
 }
 
 describe("RBAC System", () => {
@@ -32,12 +40,14 @@ describe("RBAC System", () => {
     pool = new Pool({ connectionString: env.DB_URL });
     db = drizzle(pool);
 
-    // Clean data
+    // Clean data (order respects FK constraints: user.role_id -> role.id)
+    await db.execute(sql`DELETE FROM "two_factor"`);
+    await db.execute(sql`DELETE FROM "account"`);
+    await db.execute(sql`DELETE FROM "session"`);
     await db.execute(sql`DELETE FROM "role_permission"`);
+    await db.execute(sql`DELETE FROM "user"`);
     await db.execute(sql`DELETE FROM "permission"`);
     await db.execute(sql`DELETE FROM "role"`);
-    await db.execute(sql`DELETE FROM "session"`);
-    await db.execute(sql`DELETE FROM "user"`);
 
     // Run seed
     // @ts-expect-error - drizzle type mismatch in tests sometimes
@@ -112,37 +122,29 @@ describe("RBAC System", () => {
       userCookie = userLogin.headers.get("set-cookie") || "";
     });
 
-    it("GET /permissions should be accessible to admin", async () => {
-      const res = await authRequest("/api/rbac/permissions", {
+    it("GET /permissions/all should be accessible to admin", async () => {
+      const res = await authRequest("/api/permissions/all", {
         headers: { Cookie: adminCookie },
       });
       expect(res.status).toBe(200);
-      const data = await jsonBody(res);
-      expect(data.permissions.length).toBeGreaterThan(0);
+      const data = await jsonBody<DataListResponse>(res);
+      expect(data.data.length).toBeGreaterThan(0);
     });
 
-    it("GET /permissions should be forbidden for standard user", async () => {
-      const res = await authRequest("/api/rbac/permissions", {
+    it("GET /permissions/all should be forbidden for standard user", async () => {
+      const res = await authRequest("/api/permissions/all", {
         headers: { Cookie: userCookie },
       });
       expect(res.status).toBe(403);
     });
 
-    it("GET /roles should be accessible to admin", async () => {
-      const res = await authRequest("/api/rbac/roles", {
+    it("GET /roles/all should be accessible to admin", async () => {
+      const res = await authRequest("/api/roles/all", {
         headers: { Cookie: adminCookie },
       });
       expect(res.status).toBe(200);
-      const data = await jsonBody(res);
-      expect(data.roles.length).toBe(3);
-
-      interface RoleResult {
-        name: string;
-        permissions: string[];
-      }
-
-      const adminRole = data.roles.find((r: RoleResult) => r.name === "admin");
-      expect(adminRole.permissions.length).toBeGreaterThan(10);
+      const data = await jsonBody<DataListResponse>(res);
+      expect(data.data.length).toBe(3);
     });
 
     it("GET /me/permissions should return correct permissions for user", async () => {
@@ -150,7 +152,7 @@ describe("RBAC System", () => {
         headers: { Cookie: userCookie },
       });
       expect(res.status).toBe(200);
-      const data = await jsonBody(res);
+      const data = await jsonBody<MePermissionsResponse>(res);
       expect(data.role).toBe("user");
       expect(data.permissions).toContain("view-dashboard");
       expect(data.permissions).not.toContain("list-users");
@@ -181,25 +183,15 @@ describe("RBAC System", () => {
       moderatorCookie = modLogin.headers.get("set-cookie") || "";
     });
 
-    it("should allow moderator to access moderation-related endpoints (simulated)", async () => {
-      // Using an existing endpoint that might require specified permissions
-      // For testing, we know GET /api/rbac/permissions requires 'view-permissions'
-      // Moderator has 'view-permissions' in our seed definition.
-      const res = await authRequest("/api/rbac/permissions", {
+    it("should allow moderator to access moderation-related endpoints", async () => {
+      const res = await authRequest("/api/permissions/all", {
         headers: { Cookie: moderatorCookie },
       });
       expect(res.status).toBe(200);
     });
 
-    it("should forbid moderator from accessing admin-only endpoints (simulated)", async () => {
-      // Moderator does NOT have 'view-roles' in our current seed (wait, let me check).
-      // Seed: moderator: ["list-users", "view-users", "view-roles", "view-permissions", "view-dashboard", "update-profile"]
-      // Ah, moderator has 'view-roles'. Let's check something they DON'T have.
-      // They don't have 'create-users'.
-
-      // We don't have an endpoint for 'create-users' yet, but we'll add a temporary one for testing or just trust the logic.
-      // Let's use GET /api/rbac/roles which requires 'view-roles'. moderator HAS it.
-      const res = await authRequest("/api/rbac/roles", {
+    it("should allow moderator to view roles", async () => {
+      const res = await authRequest("/api/roles/all", {
         headers: { Cookie: moderatorCookie },
       });
       expect(res.status).toBe(200);

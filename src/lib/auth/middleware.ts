@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { Context, MiddlewareHandler } from "hono";
-import { permission, rolePermission } from "@/db/schema";
+import { permission, role, rolePermission } from "@/db/schema";
 import { db } from "@/lib/db";
 import { auth } from "./auth";
 import type { AppRole } from "./permissions";
@@ -53,6 +53,7 @@ export function requireRole(...allowedRoles: AppRole[]): MiddlewareHandler {
 /**
  * Middleware that checks if the user's role has the required permission(s).
  * Permissions are looked up from the DB (permission + role_permission tables).
+ * Joins through the role table using role.name to match the user's role string.
  *
  * Usage: `app.get("/admin/settings", requirePermission("manage-settings"), handler)`
  */
@@ -69,16 +70,26 @@ export function requirePermission(...requiredPermissions: string[]): MiddlewareH
       return;
     }
 
+    const roleId = (user as AuthUser & { roleId?: string }).roleId;
     const userRole = (user as AuthUser & { role?: string }).role ?? "user";
 
-    // Admin role bypasses all permission checks if desired, but here we check explicitly
-    // to ensure the DB-backed RBAC remains the source of truth even for admins.
-    const result = await db
+    const query = db
       .select({ name: permission.name })
       .from(rolePermission)
-      .innerJoin(permission, eq(rolePermission.permissionId, permission.id))
-      .where(and(eq(rolePermission.role, userRole), inArray(permission.name, requiredPermissions)));
+      .innerJoin(permission, eq(rolePermission.permissionId, permission.id));
 
+    if (roleId) {
+      query.where(
+        and(eq(rolePermission.roleId, roleId), inArray(permission.name, requiredPermissions)),
+      );
+    } else {
+      // Fallback to role name join if roleId is not present
+      query
+        .innerJoin(role, eq(rolePermission.roleId, role.id))
+        .where(and(eq(role.name, userRole), inArray(permission.name, requiredPermissions)));
+    }
+
+    const result = await query;
     const foundPermissions = new Set(result.map((r) => r.name));
     const missing = requiredPermissions.filter((p) => !foundPermissions.has(p));
 

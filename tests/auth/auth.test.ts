@@ -20,9 +20,37 @@ async function authRequest(path: string, options: RequestInit = {}) {
   return app.fetch(req);
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: test helper for untyped JSON responses
-async function jsonBody(res: Response): Promise<any> {
-  return res.json();
+interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+}
+
+interface SignUpResponse {
+  user: AuthUser;
+}
+
+interface SignInResponse {
+  token: string;
+  user: AuthUser;
+}
+
+interface MeResponse {
+  user: AuthUser;
+  session: Record<string, unknown>;
+}
+
+interface ListUsersResponse {
+  users: AuthUser[];
+}
+
+interface SetRoleResponse {
+  user: AuthUser;
+}
+
+async function jsonBody<T = unknown>(res: Response): Promise<T> {
+  return res.json() as Promise<T>;
 }
 
 describe("Auth", () => {
@@ -59,7 +87,7 @@ describe("Auth", () => {
       });
 
       expect(res.status).toBe(200);
-      const data = await jsonBody(res);
+      const data = await jsonBody<SignUpResponse>(res);
       expect(data.user).toBeDefined();
       expect(data.user.email).toBe("test@example.com");
       expect(data.user.name).toBe("Test User");
@@ -91,7 +119,7 @@ describe("Auth", () => {
       });
 
       expect(res.status).toBe(200);
-      const data = await jsonBody(res);
+      const data = await jsonBody<SignInResponse>(res);
       expect(data.token).toBeDefined();
       expect(data.user).toBeDefined();
 
@@ -120,7 +148,7 @@ describe("Auth", () => {
       });
 
       expect(res.status).toBe(200);
-      const data = await jsonBody(res);
+      const data = await jsonBody<MeResponse>(res);
       expect(data.user.email).toBe("test@example.com");
       expect(data.session).toBeDefined();
     });
@@ -166,7 +194,7 @@ describe("Auth", () => {
       });
 
       expect(res.status).toBe(200);
-      const data = await jsonBody(res);
+      const data = await jsonBody<ListUsersResponse>(res);
       expect(data.users.length).toBeGreaterThanOrEqual(2);
     });
 
@@ -175,20 +203,21 @@ describe("Auth", () => {
         method: "GET",
         headers: { Cookie: adminCookie },
       });
-      const users = (await jsonBody(usersRes)).users;
-      const testUser = users.find((u: { email: string }) => u.email === "test@example.com");
+      const { users } = await jsonBody<ListUsersResponse>(usersRes);
+      const testUser = users.find((u) => u.email === "test@example.com");
+      expect(testUser).toBeDefined();
 
       const res = await authRequest("/api/auth/admin/set-role", {
         method: "POST",
         headers: { Cookie: adminCookie, "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: testUser.id,
+          userId: testUser?.id,
           role: "moderator",
         }),
       });
 
       expect(res.status).toBe(200);
-      const data = await jsonBody(res);
+      const data = await jsonBody<SetRoleResponse>(res);
       expect(data.user.role).toBe("moderator");
     });
 

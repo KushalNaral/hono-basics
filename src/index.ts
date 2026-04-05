@@ -1,8 +1,10 @@
 import { swaggerUI } from "@hono/swagger-ui";
+import { serveStatic } from "hono/bun";
 import { openAPIRouteHandler } from "hono-openapi";
 import { auth, sessionMiddleware } from "@/lib/auth";
 import { app } from "./app";
 import { registerAuthDocs } from "./routes/auth-docs";
+import { registerCrudRoutes } from "./routes/crud-registration";
 import { registerMainRoutes } from "./routes/main-routes";
 import { rbacRoutes } from "./routes/rbac-routes";
 
@@ -47,9 +49,13 @@ app.get(
 // Serve Swagger UI
 app.get("/doc", swaggerUI({ url: "/openapi.json" }));
 
-// 4. Route Registration
+// 4. Static File Serving (uploads)
+app.use("/uploads/*", serveStatic({ root: "./" }));
+
+// 5. Route Registration
 registerMainRoutes();
 registerAuthDocs();
+registerCrudRoutes();
 app.route("/api/rbac", rbacRoutes);
 
 export default app;
