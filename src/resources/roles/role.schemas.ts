@@ -1,5 +1,6 @@
 import "zod-openapi/extend";
 import { z } from "zod";
+import { AssetSelectSchema } from "@/assets";
 
 export const RoleSelectSchema = z
   .object({
@@ -27,6 +28,9 @@ export const RoleExpandedSchema = RoleSelectSchema.extend({
   permissions: z.array(z.string()).openapi({
     example: ["list-users", "view-users", "create-users"],
     description: "Permission names assigned to this role",
+  }),
+  assets: z.array(AssetSelectSchema).openapi({
+    description: "Assets attached to this role",
   }),
 }).openapi({ ref: "RoleExpanded" });
 

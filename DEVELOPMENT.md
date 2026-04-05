@@ -484,7 +484,7 @@ describe("My Resource", () => {
 When deleting test data, always respect FK constraints:
 
 ```
-two_factor -> account -> session -> role_permission -> user -> permission -> role
+asset -> two_factor -> account -> session -> role_permission -> user -> permission -> role
 ```
 
 Delete in this order (left to right) to avoid foreign key violations.
@@ -541,28 +541,54 @@ const body = await jsonBody<{ data: MyType[] }>(res);
 
 ---
 
-## Image Uploads
+## Asset System
+
+The asset system provides database-tracked file uploads with a polymorphic relation to any parent entity. Every uploaded file gets a row in the `asset` table with full metadata.
 
 ### How it works
 
-The image system is generic and can be attached to any resource. Images are stored on the filesystem under `uploads/{resourceType}/{resourceId}/`.
+1. **Upload**: File is written to `uploads/{resourceType}/{resourceId}/{uuid}.ext`, then an `asset` row is inserted with metadata (original name, MIME type, size, URL).
+2. **List**: Query `asset WHERE resource_type = ? AND resource_id = ?`.
+3. **Update**: Old file is deleted from disk, new file is written, DB row is updated.
+4. **Delete**: DB row is deleted first, then the file is removed from disk.
+5. **Resource integration**: When a resource is fetched (e.g. `GET /api/roles/:id`), its assets are included in the response automatically.
+6. **Cascade cleanup**: When a parent resource is deleted, all its assets are cleaned up (both DB rows and files).
 
-### Attaching images to a resource
+### The `asset` table
+
+```
+asset
+  id             text PK (UUID)
+  resource_type  text NOT NULL     -- "roles", "posts", etc.
+  resource_id    text NOT NULL     -- UUID of the parent entity
+  filename       text NOT NULL     -- generated filename on disk
+  original_name  text NOT NULL     -- user's original filename
+  mime_type      text NOT NULL     -- image/png, application/pdf, etc.
+  size           integer NOT NULL  -- bytes
+  url            text NOT NULL     -- /uploads/roles/{id}/{filename}
+  created_at     timestamp
+  updated_at     timestamp
+
+  INDEX (resource_type, resource_id)
+```
+
+### Attaching assets to a resource
 
 In `src/routes/crud-registration.ts`:
 
 ```typescript
-import { createImageRoutes } from "@/images";
+import { createAssetRoutes } from "@/assets";
 
 app.route(
   "/api/categories",
-  createImageRoutes({
+  createAssetRoutes({
     resourceType: "categories",
     idParam: "id",
     permissions: {
       upload: "update-categories",
       update: "update-categories",
       remove: "update-categories",
+      list: "view-categories",
     },
     tags: ["Categories"],
     maxFileSize: 5 * 1024 * 1024, // 5MB
@@ -572,26 +598,64 @@ app.route(
 ```
 
 This generates:
-- `POST /api/categories/:id/images` - Upload single
-- `POST /api/categories/:id/images/bulk` - Upload multiple
-- `PUT /api/categories/:id/images/:filename` - Replace image
-- `PUT /api/categories/:id/images/bulk` - Replace multiple
-- `DELETE /api/categories/:id/images/:filename` - Delete single
-- `DELETE /api/categories/:id/images` - Delete all for resource
+- `GET /api/categories/:id/assets` - List assets
+- `POST /api/categories/:id/assets` - Upload single
+- `POST /api/categories/:id/assets/bulk` - Upload multiple
+- `PUT /api/categories/:id/assets/:assetId` - Replace file
+- `DELETE /api/categories/:id/assets/:assetId` - Delete single
+- `DELETE /api/categories/:id/assets` - Delete all for resource
+
+### Including assets in getById
+
+To include assets when fetching a resource, add a `listByResource` call in the service's `getById`:
+
+```typescript
+import { assetService } from "@/assets";
+
+async getById(id: string) {
+  const row = await db.select().from(myTable).where(eq(myTable.id, id)).limit(1);
+  if (!row[0]) return null;
+
+  const assets = await assetService.listByResource("my-resource", row[0].id);
+  return { ...row[0], assets };
+}
+```
+
+### Cleaning up assets on delete
+
+In your service's `delete` method, call `removeResourceAssets` inside the transaction:
+
+```typescript
+async delete(id: string) {
+  return await db.transaction(async (tx) => {
+    await assetService.removeResourceAssets("my-resource", id, tx);
+    const result = await tx.delete(myTable).where(eq(myTable.id, id)).returning();
+    return result.length > 0;
+  });
+}
+```
 
 ### Uploading via curl
 
 ```sh
 # Single upload
-curl -X POST http://localhost:3000/api/roles/{id}/images \
+curl -X POST http://localhost:3000/api/roles/{id}/assets \
   -H "Cookie: $SESSION_COOKIE" \
   -F "file=@photo.png"
 
 # Multiple upload
-curl -X POST http://localhost:3000/api/roles/{id}/images/bulk \
+curl -X POST http://localhost:3000/api/roles/{id}/assets/bulk \
   -H "Cookie: $SESSION_COOKIE" \
   -F "files=@photo1.png" \
   -F "files=@photo2.png"
+
+# List assets
+curl http://localhost:3000/api/roles/{id}/assets \
+  -H "Cookie: $SESSION_COOKIE"
+
+# Delete single asset
+curl -X DELETE http://localhost:3000/api/roles/{id}/assets/{assetId} \
+  -H "Cookie: $SESSION_COOKIE"
 ```
 
 ### Static serving

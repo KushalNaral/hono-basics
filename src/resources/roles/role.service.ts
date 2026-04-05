@@ -1,4 +1,6 @@
 import { eq, inArray } from "drizzle-orm";
+import type { AssetSelect } from "@/assets";
+import { assetService } from "@/assets";
 import { createBaseService } from "@/crud/base-service";
 import type { CrudService } from "@/crud/types";
 import { permission, role, rolePermission } from "@/db/schema";
@@ -6,7 +8,7 @@ import { db } from "@/lib/db";
 
 export type RoleSelect = typeof role.$inferSelect;
 export type RoleInsert = typeof role.$inferInsert;
-export type RoleWithPermissions = RoleSelect & { permissions: string[] };
+export type RoleWithPermissions = RoleSelect & { permissions: string[]; assets: AssetSelect[] };
 
 const baseService = createBaseService<typeof role, RoleSelect, RoleInsert, string>({
   table: role,
@@ -51,8 +53,11 @@ export const roleService: CrudService<RoleSelect, RoleInsert, string, RoleWithPe
     const [row] = await db.select().from(role).where(eq(role.id, id)).limit(1);
     if (!row) return null;
 
-    const permissions = await getPermissionsForRole(row.id);
-    return { ...row, permissions };
+    const [permissions, assets] = await Promise.all([
+      getPermissionsForRole(row.id),
+      assetService.listByResource("roles", row.id),
+    ]);
+    return { ...row, permissions, assets };
   },
 
   async create(data: RoleInsert & { permissions?: string[] }): Promise<RoleSelect> {
@@ -110,6 +115,8 @@ export const roleService: CrudService<RoleSelect, RoleInsert, string, RoleWithPe
   async delete(id: string): Promise<boolean> {
     return await db.transaction(async (tx) => {
       await tx.delete(rolePermission).where(eq(rolePermission.roleId, id));
+      // @ts-expect-error - drizzle transaction type mismatch with NodePgDatabase
+      await assetService.removeResourceAssets("roles", id, tx);
       const result = await tx.delete(role).where(eq(role.id, id)).returning();
       return result.length > 0;
     });

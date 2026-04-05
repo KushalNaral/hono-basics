@@ -79,6 +79,11 @@ bun run prod:docker
 src/
   index.ts                      # Entry point - middleware, routes, docs
   app.ts                        # Hono app instance
+  assets/                       # Generic asset/file tracking system
+    asset.service.ts            #   DB + filesystem operations
+    asset.routes.ts             #   Upload, update, delete, list routes
+    asset.schemas.ts            #   Zod response schemas
+    serialization.ts            #   Date serialization
   crud/                         # Generic CRUD factory
     base-service.ts             #   Base service (filter, sort, paginate)
     route-factory.ts            #   Route generator with OpenAPI
@@ -87,6 +92,7 @@ src/
     serialization.ts            #   Date serialization helpers
   db/
     schema/                     # Drizzle table definitions
+      asset-schema.ts           #   asset (polymorphic file tracking)
       auth-schema.ts            #   user, session, account, verification, twoFactor
       rbac-schema.ts            #   role, permission, rolePermission
     seed/
@@ -119,19 +125,19 @@ src/
   routes/
     main-routes.ts              #   GET /, GET /me
     auth-docs.ts                #   OpenAPI docs for Better Auth endpoints
-    crud-registration.ts        #   Registers CRUD + image routes
+    crud-registration.ts        #   Registers CRUD + asset routes
     rbac-routes.ts              #   GET /api/rbac/me/permissions
 
 tests/
   setup.ts                      # Drops schema, runs migrations before tests
   auth/                         # Auth, RBAC, role-sync tests
   crud/                         # CRUD operation tests
-  images/                       # Image upload tests
+  assets/                       # Asset upload/tracking tests
   db/                           # Migration tests
   env/                          # Environment validation tests
 
 drizzle/                        # SQL migration files
-uploads/                        # Uploaded images (gitignored in production)
+uploads/                        # Uploaded files (gitignored in production)
 ```
 
 ## API Endpoints
@@ -172,15 +178,20 @@ uploads/                        # Uploaded images (gitignored in production)
 | PUT | `/api/permissions/:id` | Update permission | `update-roles` |
 | DELETE | `/api/permissions/:id` | Delete permission | `delete-roles` |
 
-### Role Images
+### Role Assets
+
+All uploaded files are tracked in the `asset` table with metadata (original name, MIME type, size) and a polymorphic relation to the parent resource. Assets are included in the `GET /api/roles/:id` response automatically.
 
 | Method | Path | Description | Permission |
 |--------|------|-------------|------------|
-| POST | `/api/roles/:id/images` | Upload single image | `update-roles` |
-| POST | `/api/roles/:id/images/bulk` | Upload multiple images | `update-roles` |
-| PUT | `/api/roles/:id/images/:filename` | Replace an image | `update-roles` |
-| DELETE | `/api/roles/:id/images/:filename` | Delete an image | `update-roles` |
-| DELETE | `/api/roles/:id/images` | Delete all images for a role | `update-roles` |
+| GET | `/api/roles/:id/assets` | List all assets for a role | `view-roles` |
+| POST | `/api/roles/:id/assets` | Upload single file | `update-roles` |
+| POST | `/api/roles/:id/assets/bulk` | Upload multiple files | `update-roles` |
+| PUT | `/api/roles/:id/assets/:assetId` | Replace a file | `update-roles` |
+| DELETE | `/api/roles/:id/assets/:assetId` | Delete a single asset | `update-roles` |
+| DELETE | `/api/roles/:id/assets` | Delete all assets for a role | `update-roles` |
+
+Deleting a role automatically cleans up all its assets (both DB records and files on disk).
 
 ### RBAC
 
