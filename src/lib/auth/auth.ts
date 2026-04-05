@@ -22,6 +22,7 @@ async function lookupRoleId(roleName: string): Promise<string | null> {
 export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
   secret: env.BETTER_AUTH_SECRET,
+  trustedOrigins: [env.CORS_ORIGIN],
   database: drizzleAdapter(db, {
     provider: "pg",
   }),
